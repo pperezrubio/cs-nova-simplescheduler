@@ -16,7 +16,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 """
-Tests For CS Simple Scheduler
+Tests For Cloudscaling Simple Scheduler
 """
 
 import datetime
@@ -44,7 +44,7 @@ from nova.compute import vm_states
 
 
 FLAGS = flags.FLAGS
-flags.DECLARE('max_cores', 'nova.scheduler.CS_simple')
+flags.DECLARE('max_cores', 'cloudscaling.nova.scheduler.simple')
 flags.DECLARE('stub_network', 'nova.compute.manager')
 flags.DECLARE('instances_path', 'nova.compute.manager')
 
@@ -54,7 +54,7 @@ FAKE_UUID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
 
 class CSSimpleDriverTestCase(test.TestCase):
-    """Test case for CS simple driver"""
+    """Test case for Cloudsclaling simple driver"""
     def setUp(self):
         super(CSSimpleDriverTestCase, self).setUp()
         self.flags(connection_type='fake',
@@ -63,8 +63,8 @@ class CSSimpleDriverTestCase(test.TestCase):
                    max_gigabytes=4,
                    network_manager='nova.network.manager.FlatManager',
                    volume_driver='nova.volume.driver.FakeISCSIDriver',
-                   scheduler_driver='nova.scheduler'\
-                       '.CS_simple.CSSimpleScheduler')
+                   scheduler_driver='cloudscaling.nova.scheduler'\
+                       '.simple.SimpleScheduler')
         self.scheduler = manager.SchedulerManager()
         self.context = context.get_admin_context()
         self.user_id = 'fake'
@@ -345,7 +345,7 @@ class CSSimpleDriverTestCase(test.TestCase):
 
     def test_reserved_memory(self):
         """Ensures no oversubscription"""
-        FLAGS.CS_host_reserved_memory = 36
+        FLAGS.cs_host_reserved_memory_mb = 36
         s_ref = self._create_compute_service(host='host1')
         instance_id1 = self._create_instance()
         self.assertRaises(driver.NoValidHost,
@@ -354,7 +354,7 @@ class CSSimpleDriverTestCase(test.TestCase):
                           instance_id1)
         db.instance_destroy(self.context, instance_id1)
         db.service_destroy(self.context, s_ref['id'])
-        FLAGS.CS_host_reserved_memory = 06
+        FLAGS.cs_host_reserved_memory_mb = 06
 
     def test_wont_sechedule_if_specified_host_is_down(self):
         compute1 = self.start_service('compute', host='host1')
@@ -590,7 +590,7 @@ class CSSimpleDriverTestCase(test.TestCase):
         i_ref = db.instance_get(self.context, instance_id)
         s_ref = self._create_compute_service(host='somewhere')
 
-        self.assertRaises(exception.MigrationError,
+        self.assertRaises(exception.NovaException,
                           self.scheduler.driver._live_migration_dest_check,
                           self.context, i_ref, 'somewhere', False)
 
@@ -602,7 +602,7 @@ class CSSimpleDriverTestCase(test.TestCase):
         """Confirms exception raises when dest doesn't have enough disk."""
         instance_id = self._create_instance()
         instance_id2 = self._create_instance(host='somewhere',
-                                             local_gb=70)
+                                             local_gb=70, memory_mb=1)
         i_ref = db.instance_get(self.context, instance_id)
         s_ref = self._create_compute_service(host='somewhere')
 
@@ -764,9 +764,9 @@ class CSMultiDriverTestCase(CSSimpleDriverTestCase):
                    max_gigabytes=4,
                    network_manager='nova.network.manager.FlatManager',
                    volume_driver='nova.volume.driver.FakeISCSIDriver',
-                   compute_scheduler_driver=('nova.scheduler.CS_simple'
-                                             '.CSSimpleScheduler'),
-                   volume_scheduler_driver=('nova.scheduler.CS_simple'
-                                            '.CSSimpleScheduler'),
+                   compute_scheduler_driver=('cloudscaling.nova.scheduler'
+                                             '.simple.SimpleScheduler'),
+                   volume_scheduler_driver=('cloudscaling.nova.scheduler'
+                                            '.simple.SimpleScheduler'),
                    scheduler_driver='nova.scheduler.multi.MultiScheduler')
         self.scheduler = manager.SchedulerManager()

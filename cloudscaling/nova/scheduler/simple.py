@@ -31,11 +31,11 @@ from nova.scheduler import simple
 from nova.api.ec2 import ec2utils
 
 FLAGS = flags.FLAGS
-flags.DEFINE_integer("CS_host_reserved_memory", 6,
+flags.DEFINE_integer("cs_host_reserved_memory_mb", 0,
                      "memory reserved for base OS")
 
 
-class CSSimpleScheduler(simple.SimpleScheduler):
+class SimpleScheduler(simple.SimpleScheduler):
     """Implements Naive Scheduler that tries to find least loaded host without
        oversubscription of memory."""
 
@@ -64,13 +64,13 @@ class CSSimpleScheduler(simple.SimpleScheduler):
             used = reduce(lambda x, y: x + y, used_list)
 
         mem_inst = instance_ref['memory_mb']
-        avail = avail - used - FLAGS.CS_host_reserved_memory
+        avail = avail - used - FLAGS.cs_host_reserved_memory_mb
         if avail <= mem_inst:
             instance_id = ec2utils.id_to_ec2_id(instance_ref['id'])
             reason = _("Lack of memory(host:%(avail)s"\
                        " <= instance:%(mem_inst)s)"\
                        "on $(dest)")
-            raise exception.MigrationError(reason=reason % locals())
+            raise exception.InsufficientFreeMemory(uuid=dest)
 
     #overrides method from SimpleScheduler
     def _schedule_instance(self, context, instance_id, *_args, **_kwargs):
@@ -102,7 +102,7 @@ class CSSimpleScheduler(simple.SimpleScheduler):
                 self.assert_compute_node_has_enough_memory(context,
                                                           instance_ref,
                                                           service['host'])
-            except exception.MigrationError:
+            except exception.InsufficientFreeMemory:
                 break
             if self.service_is_up(service):
                 # NOTE(vish): this probably belongs in the manager, if we
