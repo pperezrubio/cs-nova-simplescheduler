@@ -1,6 +1,6 @@
 Alternate scheduler for use with OpenStack Nova based on nova.scheduler.simple.SimpleScheduler that doesn't oversubscribe memory
 
-The SimpleScheduler massively oversubscribes memory without regard. The check in Diablo doesn't work with libvirt/kvm, this fixes the bug.  It is simple and straight-forward, iterative fix.  There is a better solution being introduced in Essex, currently in review.
+The SimpleScheduler massively oversubscribes memory without regard. The check in Diablo doesn't work with libvirt/kvm, this fixes the bug.  It is a simple and straight-forward, iterative fix.  There is a better solution being introduced in Essex, currently in review.
 
 This should be used by anyone using libvirt/kvm and the SimpleScheduler on OpenStack Nova (Diablo).
 
