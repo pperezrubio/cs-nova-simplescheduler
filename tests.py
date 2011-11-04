@@ -42,6 +42,7 @@ from nova.scheduler import multi
 from nova.compute import power_state
 from nova.compute import vm_states
 
+from cloudscaling.nova.scheduler.simple import SimpleScheduler
 
 FLAGS = flags.FLAGS
 flags.DECLARE('max_cores', 'cloudscaling.nova.scheduler.simple')
@@ -53,8 +54,41 @@ FAKE_UUID_NOT_FOUND = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
 FAKE_UUID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 
 
+def _create_instance_dict(**kwargs):
+    """Create a dictionary for a test instance"""
+    inst = {}
+    # NOTE(jk0): If an integer is passed as the image_ref, the image
+    # service will use the default image service (in this case, the fake).
+    inst['image_ref'] = '1'
+    inst['reservation_id'] = 'r-fakeres'
+    inst['user_id'] = kwargs.get('user_id', 'admin')
+    inst['project_id'] = kwargs.get('project_id', 'fake')
+    inst['instance_type_id'] = '1'
+    inst['host'] = kwargs.get('host', 'dummy')
+    inst['vcpus'] = kwargs.get('vcpus', 1)
+    inst['memory_mb'] = kwargs.get('memory_mb', 20)
+    inst['local_gb'] = kwargs.get('local_gb', 30)
+    inst['vm_state'] = kwargs.get('vm_state', vm_states.ACTIVE)
+    inst['power_state'] = kwargs.get('power_state', power_state.RUNNING)
+    inst['task_state'] = kwargs.get('task_state', None)
+    inst['availability_zone'] = kwargs.get('availability_zone', None)
+    inst['ami_launch_index'] = 0
+    inst['launched_on'] = kwargs.get('launched_on', 'dummy')
+    return inst
+
+
+def _create_instance(**kwargs):
+    """Create a test instance"""
+    ctxt = context.get_admin_context()
+    return db.instance_create(ctxt, _create_instance_dict(**kwargs))['id']
+
+
+def _create_request_spec(**kwargs):
+    return dict(instance_properties=_create_instance_dict(**kwargs))
+
+
 class CSSimpleDriverTestCase(test.TestCase):
-    """Test case for Cloudsclaling simple driver"""
+    """Test case for Cloudscaling simple driver"""
     def setUp(self):
         super(CSSimpleDriverTestCase, self).setUp()
         self.flags(connection_type='fake',
@@ -69,28 +103,7 @@ class CSSimpleDriverTestCase(test.TestCase):
         self.context = context.get_admin_context()
         self.user_id = 'fake'
         self.project_id = 'fake'
-
-    def _create_instance(self, **kwargs):
-        """Create a test instance"""
-        inst = {}
-        # NOTE(jk0): If an integer is passed as the image_ref, the image
-        # service will use the default image service (in this case, the fake).
-        inst['image_ref'] = '1'
-        inst['reservation_id'] = 'r-fakeres'
-        inst['user_id'] = self.user_id
-        inst['project_id'] = self.project_id
-        inst['instance_type_id'] = '1'
-        inst['vcpus'] = kwargs.get('vcpus', 1)
-        inst['ami_launch_index'] = 0
-        inst['availability_zone'] = kwargs.get('availability_zone', None)
-        inst['host'] = kwargs.get('host', 'dummy')
-        inst['memory_mb'] = kwargs.get('memory_mb', 20)
-        inst['local_gb'] = kwargs.get('local_gb', 30)
-        inst['launched_on'] = kwargs.get('launghed_on', 'dummy')
-        inst['vm_state'] = kwargs.get('vm_state', vm_states.ACTIVE)
-        inst['task_state'] = kwargs.get('task_state', None)
-        inst['power_state'] = kwargs.get('power_state', power_state.RUNNING)
-        return db.instance_create(self.context, inst)['id']
+        self._create_instance = _create_instance
 
     def _create_volume(self):
         """Create a test volume"""
@@ -122,6 +135,15 @@ class CSSimpleDriverTestCase(test.TestCase):
         dic['hypervisor_version'] = kwargs.get('hypervisor_version', 12003)
         db.compute_node_create(self.context, dic)
         return db.service_get(self.context, s_ref['id'])
+
+    def test_regular_user_can_schedule(self):
+        """Ensures a non-admin can run an instance"""
+
+        s_ref = self._create_compute_service(host='host1')
+        instance_id = self._create_instance()
+        ctxt = context.RequestContext('fake', 'fake', False)
+        self.scheduler.driver.schedule_run_instance(ctxt, instance_id)
+        db.instance_destroy(self.context, s_ref['id'])
 
     def test_doesnt_report_disabled_hosts_as_up_no_queue(self):
         """Ensures driver doesn't find hosts before they are enabled"""

@@ -39,6 +39,44 @@ class SimpleScheduler(simple.SimpleScheduler):
     """Implements Naive Scheduler that tries to find least loaded host without
        oversubscription of memory."""
 
+
+    def _schedule_instance(self, context, instance_id, *_args, **_kwargs):
+        """Picks a host that is up and has the fewest running instances."""
+        elevated = context.elevated()
+        instance_ref = db.instance_get(context, instance_id)
+        if (instance_ref['availability_zone']
+            and ':' in instance_ref['availability_zone']
+            and context.is_admin):
+            zone, _x, host = instance_ref['availability_zone'].partition(':')
+            service = db.service_get_by_args(elevated, host,
+                                             'nova-compute')
+            if not self.service_is_up(service):
+                raise driver.WillNotSchedule(_("Host %s is not alive") % host)
+
+            # TODO(vish): this probably belongs in the manager, if we
+            #             can generalize this somehow
+            now = utils.utcnow()
+            db.instance_update(context, instance_id, {'host': host,
+                                                      'scheduled_at': now})
+            return host
+        results = db.service_get_all_compute_sorted(elevated)
+        for result in results:
+            (service, instance_cores) = result
+            if instance_cores + instance_ref['vcpus'] > FLAGS.max_cores:
+                raise driver.NoValidHost(_("All hosts have too many cores"))
+            if self.service_is_up(service):
+                # NOTE(vish): this probably belongs in the manager, if we
+                #             can generalize this somehow
+                now = utils.utcnow()
+                db.instance_update(context,
+                                   instance_id,
+                                   {'host': service['host'],
+                                    'scheduled_at': now})
+                return service['host']
+        raise driver.NoValidHost(_("Scheduler was unable to locate a host"
+                                   " for this request. Is the appropriate"
+                                   " service running?"))
+
     #overrides method from driver.Scheduler
     def assert_compute_node_has_enough_memory(self, context,
                                               instance_ref, dest):
@@ -50,15 +88,15 @@ class SimpleScheduler(simple.SimpleScheduler):
         :param dest: destination host
 
         """
-
+        elevated = context.elevated()
         # Getting total available memory and disk of host
-        avail = self._get_compute_info(context, dest, 'memory_mb')
+        avail = self._get_compute_info(elevated, dest, 'memory_mb')
 
         # Getting total used memory and disk of host
         # It should be sum of memories that are assigned as max value,
         # because overcommiting is risky.
         used = 0
-        instance_refs = db.instance_get_all_by_host(context, dest)
+        instance_refs = db.instance_get_all_by_host(elevated, dest)
         used_list = [i['memory_mb'] for i in instance_refs]
         if used_list:
             used = reduce(lambda x, y: x + y, used_list)
@@ -75,12 +113,13 @@ class SimpleScheduler(simple.SimpleScheduler):
     #overrides method from SimpleScheduler
     def _schedule_instance(self, context, instance_id, *_args, **_kwargs):
         """Picks a host that is up and has the fewest running instances."""
+        elevated = context.elevated()
         instance_ref = db.instance_get(context, instance_id)
         if (instance_ref['availability_zone']
             and ':' in instance_ref['availability_zone']
             and context.is_admin):
             zone, _x, host = instance_ref['availability_zone'].partition(':')
-            service = db.service_get_by_args(context.elevated(), host,
+            service = db.service_get_by_args(elevated, host,
                                              'nova-compute')
             if not self.service_is_up(service):
                 raise driver.WillNotSchedule(_("Host %s is not alive") % host)
@@ -93,7 +132,7 @@ class SimpleScheduler(simple.SimpleScheduler):
             db.instance_update(context, instance_id, {'host': host,
                                                       'scheduled_at': now})
             return host
-        results = db.service_get_all_compute_sorted(context)
+        results = db.service_get_all_compute_sorted(elevated)
         for result in results:
             (service, instance_cores) = result
             if instance_cores + instance_ref['vcpus'] > FLAGS.max_cores:
@@ -112,6 +151,62 @@ class SimpleScheduler(simple.SimpleScheduler):
                                    instance_id,
                                    {'host': service['host'],
                                     'scheduled_at': now})
+                return service['host']
+        raise driver.NoValidHost(_("Scheduler was unable to locate a host"
+                                   " for this request. Is the appropriate"
+                                   " service running?"))
+
+
+    def schedule_create_volume(self, context, volume_id, *_args, **_kwargs):
+        """Picks a host that is up and has the fewest volumes."""
+        elevated = context.elevated()
+        volume_ref = db.volume_get(context, volume_id)
+        if (volume_ref['availability_zone']
+            and ':' in volume_ref['availability_zone']
+            and context.is_admin):
+            zone, _x, host = volume_ref['availability_zone'].partition(':')
+            service = db.service_get_by_args(elevated, host,
+                                             'nova-volume')
+            if not self.service_is_up(service):
+                raise driver.WillNotSchedule(_("Host %s not available") % host)
+
+            # TODO(vish): this probably belongs in the manager, if we
+            #             can generalize this somehow
+            now = utils.utcnow()
+            db.volume_update(context, volume_id, {'host': host,
+                                                  'scheduled_at': now})
+            return host
+        results = db.service_get_all_volume_sorted(elevated)
+        for result in results:
+            (service, volume_gigabytes) = result
+            if volume_gigabytes + volume_ref['size'] > FLAGS.max_gigabytes:
+                raise driver.NoValidHost(_("All hosts have too many "
+                                           "gigabytes"))
+            if self.service_is_up(service):
+                # NOTE(vish): this probably belongs in the manager, if we
+                #             can generalize this somehow
+                now = utils.utcnow()
+                db.volume_update(context,
+                                 volume_id,
+                                 {'host': service['host'],
+                                  'scheduled_at': now})
+                return service['host']
+        raise driver.NoValidHost(_("Scheduler was unable to locate a host"
+                                   " for this request. Is the appropriate"
+                                   " service running?"))
+
+
+
+    def schedule_set_network_host(self, context, *_args, **_kwargs):
+        """Picks a host that is up and has the fewest networks."""
+        elevated = context.elevated()
+
+        results = db.service_get_all_network_sorted(elevated)
+        for result in results:
+            (service, instance_count) = result
+            if instance_count >= FLAGS.max_networks:
+                raise driver.NoValidHost(_("All hosts have too many networks"))
+            if self.service_is_up(service):
                 return service['host']
         raise driver.NoValidHost(_("Scheduler was unable to locate a host"
                                    " for this request. Is the appropriate"
