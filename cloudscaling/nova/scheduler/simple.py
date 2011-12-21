@@ -63,7 +63,7 @@ class SimpleScheduler(simple.SimpleScheduler):
         for result in results:
             (service, instance_cores) = result
             if instance_cores + instance_ref['vcpus'] > FLAGS.max_cores:
-                raise driver.NoValidHost(_("All hosts have too many cores"))
+                raise driver.NoValidHost(_("Not enough free cores"))
             if self.service_is_up(service):
                 # NOTE(vish): this probably belongs in the manager, if we
                 #             can generalize this somehow
@@ -136,7 +136,7 @@ class SimpleScheduler(simple.SimpleScheduler):
         for result in results:
             (service, instance_cores) = result
             if instance_cores + instance_ref['vcpus'] > FLAGS.max_cores:
-                raise driver.NoValidHost(_("All hosts have too many cores"))
+                raise driver.NoValidHost(_("Not enough free cores"))
             try:
                 self.assert_compute_node_has_enough_memory(context,
                                                           instance_ref,
@@ -180,7 +180,7 @@ class SimpleScheduler(simple.SimpleScheduler):
         for result in results:
             (service, volume_gigabytes) = result
             if volume_gigabytes + volume_ref['size'] > FLAGS.max_gigabytes:
-                raise driver.NoValidHost(_("All hosts have too many "
+                raise driver.NoValidHost(_("Not enough volume"
                                            "gigabytes"))
             if self.service_is_up(service):
                 # NOTE(vish): this probably belongs in the manager, if we
@@ -205,7 +205,7 @@ class SimpleScheduler(simple.SimpleScheduler):
         for result in results:
             (service, instance_count) = result
             if instance_count >= FLAGS.max_networks:
-                raise driver.NoValidHost(_("All hosts have too many networks"))
+                raise driver.NoValidHost(_("have too many networks"))
             if self.service_is_up(service):
                 return service['host']
         raise driver.NoValidHost(_("Scheduler was unable to locate a host"
